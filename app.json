@@ -15,7 +15,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.thesis.eluseedate",
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to predict turn directions."
+        "NSCameraUsageDescription": "This app uses the camera to predict turn directions.",
+        "NSMicrophoneUsageDescription": "Allow EluSEEdate to access your microphone for voice commands."
       }
     },
     "android": {
@@ -32,7 +33,14 @@
           "cameraPermission": "Allow EluSEEdate to access your camera for turn prediction."
         }
       ],
-      "react-native-fast-tflite"
+      "react-native-fast-tflite",
+      [
+        "react-native-vosk",
+        {
+          "models": ["assets/model-en-us"],
+          "iOSMicrophonePermission": "Allow EluSEEdate to access your microphone for voice commands."
+        }
+      ]
     ],
     "extra": {
       "eas": {
