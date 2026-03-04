@@ -31,9 +31,6 @@ Before starting, ensure you have:
 Navigate to the project directory and install all required packages:
 
 ```bash
-# Navigate to the project folder
-cd test_deployment
-
 # Install all dependencies (this fixes the "Cannot find module" errors)
 npm install
 
@@ -290,7 +287,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 2. Install (will replace v24)
 3. Verify: `node --version` should show v20.x.x
 4. Restart PowerShell/VS Code
-5. Run `npm install` again in test_deployment
+5. Run `npm install` again
 
 ### 1. "Cannot find module 'react'" or similar errors
 
@@ -371,7 +368,6 @@ npx expo start
 ## Project Structure Quick Reference
 
 ```
-test_deployment/
 ├── package.json         # Dependencies list
 ├── app.json            # Expo configuration
 ├── App.tsx             # App entry point
@@ -648,8 +644,6 @@ Edit `app.json` to bump the version:
 
 **2. Rebuild with EAS:**
 ```bash
-cd test_deployment
-
 # For testing/preview APK
 eas build --platform android --profile preview
 

@@ -225,12 +225,11 @@ print("Predicted class:", np.argmax(output))
 
 1. **Copy the TFLite model to the app:**
    ```bash
-   cp conversion/convlstm_float16.tflite test_deployment/assets/model/convlstm.tflite
+   cp conversion/convlstm_float16.tflite assets/model/convlstm.tflite
    ```
 
 2. **Build development build** (TFLite requires native modules):
    ```bash
-   cd test_deployment
    npx expo prebuild
    npx expo run:android
    ```
