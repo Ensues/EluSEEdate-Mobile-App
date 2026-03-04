@@ -2,7 +2,7 @@
   "expo": {
     "name": "EluSEEdate",
     "slug": "eluseedate",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "splash": {

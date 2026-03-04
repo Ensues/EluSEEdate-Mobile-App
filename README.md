@@ -4,7 +4,7 @@ React Native/Expo mobile application for real-time turn direction prediction usi
 
 ## Overview
 
-This app uses a **ConvLSTM (Convolutional Long Short-Term Memory)** model to predict vehicle turn directions in real-time using the device camera. The model analyzes sequences of video frames and outputs one of three directions: **Front**, **Left**, or **Right**.
+This app uses a **ConvLSTM (Convolutional Long Short-Term Memory)** model to predict user turn directions in real-time using the device camera. The model analyzes sequences of video frames and outputs one of three directions: **Front**, **Left**, or **Right**.
 
 **Model Architecture**: Prototype 10 (ConvLSTM with Global Average Pooling)
 **Inference Engine**: TensorFlow Lite via `react-native-fast-tflite`
@@ -57,6 +57,10 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 │   └── model/
 │       ├── convlstm.tflite          # TFLite model file
 │       └── convlstm.onnx            # ONNX model (backup)
+├── texts/
+│   ├── DATA_DICTIONARY.txt          # Variable documentation
+│   ├── DOCUMENTATION_UPDATE_GUIDE.txt # Maintenance guide
+│   └── *.txt                        # Other reference docs
 └── src/
     ├── config/
     │   └── modelConfig.ts           # Model & device configuration
@@ -134,7 +138,7 @@ npx eas build --platform android --profile production
 1. Launch the app
 2. Tap the **Start** button on the main menu
 3. Grant camera permission when prompted
-4. Point the rear camera at the road ahead
+4. Point the camera in the direction you're moving
 5. The app will automatically:
    - Capture frames from the camera
    - Buffer frames until ready for prediction (min 10 frames)

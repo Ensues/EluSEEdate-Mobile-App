@@ -39,9 +39,9 @@ export const MODEL_CONFIG = {
 
   // Class Labels
   classes: [
-    { id: 0, name: 'Front', description: 'Vehicle continues straight' },
-    { id: 1, name: 'Left', description: 'Vehicle turns left' },
-    { id: 2, name: 'Right', description: 'Vehicle turns right' }
+    { id: 0, name: 'Front', description: 'User continues straight' },
+    { id: 1, name: 'Left', description: 'User turns left' },
+    { id: 2, name: 'Right', description: 'User turns right' }
   ],
 
   // Performance Metrics (Expected)
