@@ -169,6 +169,15 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
         <Text style={styles.footerText}>
           Point camera at the road
         </Text>
+        
+        {/* Debug Logs Button */}
+        <TouchableOpacity
+          style={styles.debugButton}
+          onPress={() => navigation.navigate('Logs')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.debugButtonText}>📋 Debug Logs</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -257,6 +266,17 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: '#666666',
+    color: '#666666',    marginBottom: 20,
   },
+  debugButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  debugButtonText: {
+    fontSize: 14,
+    color: '#888888',  },
 });

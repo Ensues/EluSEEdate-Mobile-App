@@ -5,3 +5,4 @@
 
 export { default as MainMenuScreen } from './MainMenuScreen';
 export { default as CameraScreen } from './CameraScreen';
+export { default as LogsScreen } from './LogsScreen';

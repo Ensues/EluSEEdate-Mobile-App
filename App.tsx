@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import MainMenuScreen from './src/screens/MainMenuScreen';
 import CameraScreen from './src/screens/CameraScreen';
+import LogsScreen from './src/screens/LogsScreen';
 import { RootStackParamList } from './src/navigation/types';
 
 // Ignore specific warnings (for development)
@@ -45,6 +46,10 @@ export default function App() {
           <Stack.Screen 
             name="Camera" 
             component={CameraScreen}
+          />
+          <Stack.Screen 
+            name="Logs" 
+            component={LogsScreen}
           />
         </Stack.Navigator>
       </NavigationContainer>
