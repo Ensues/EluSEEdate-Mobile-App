@@ -98,15 +98,24 @@ export type ClassId = 0 | 1 | 2;
 /**
  * YOLOv12 Object Detection Configuration
  * For obstacle detection alongside ConvLSTM turn prediction
+ * 
+ * Model Specifications:
+ * - Input: (1, 3, 128, 128) in BCHW format [Batch, Channels, Height, Width]
+ * - Output: (1, 84, 336) where 84 = [4 bbox coords + 80 class scores], 336 detections
  */
 export const YOLO_CONFIG = {
   // Model Architecture Parameters
   model: {
-    inputSize: 128,           // Input image size (128x128 to match ConvLSTM, adjust when real model arrives)
-    channels: 3,              // RGB channels
-    numClasses: 80,           // Number of COCO classes (adjust based on your model)
-    confidenceThreshold: 0.5, // Minimum confidence for detection
-    iouThreshold: 0.45,       // IoU threshold for NMS
+    inputShape: [1, 3, 128, 128], // Input shape: BCHW format
+    outputShape: [1, 84, 336],    // Output shape: [batch, (bbox+classes), num_detections]
+    inputSize: 128,               // Input image size (128x128)
+    channels: 3,                  // RGB channels
+    inputFormat: 'BCHW',          // Batch, Channels, Height, Width
+    numClasses: 80,               // Number of COCO classes
+    bboxCoords: 4,                // x, y, w, h
+    numDetections: 336,           // Maximum number of detections
+    confidenceThreshold: 0.5,     // Minimum confidence for detection
+    iouThreshold: 0.45,           // IoU threshold for NMS
   },
 
   // Preprocessing Parameters

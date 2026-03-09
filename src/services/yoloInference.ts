@@ -180,9 +180,11 @@ class YOLOModelManager {
         
         // Preprocess frame for YOLO (resize to model input size, normalize)
         const preprocessed = this.preprocessFrame(frame);
+        console.log('[YOLO-TFLite] Preprocessed data shape:', preprocessed.data.length, 'expected:', 1*3*128*128);
         
         // Run model inference
         const outputTensor = await this.model.run([preprocessed.data]);
+        console.log('[YOLO-TFLite] Model inference complete, output:', typeof outputTensor);
         
         // Parse YOLO output (format depends on your specific YOLOv12 model)
         detections = this.parseYOLOOutput(outputTensor, frame.width, frame.height);
@@ -216,21 +218,43 @@ class YOLOModelManager {
 
   /**
    * Preprocess frame for YOLO input
-   * Resize to model input size and normalize
+   * Input shape: (1, 3, 128, 128) BCHW format
+   * Converts RGBA camera data to RGB, resizes, and normalizes to [0, 1]
    */
   private preprocessFrame(frame: FrameData): { data: Float32Array; width: number; height: number } {
-    // PLACEHOLDER: Real preprocessing will depend on your YOLOv12 model requirements
-    // For now, create dummy data matching expected input shape
-    const inputSize = 128; // Will match ConvLSTM size, adjust when real model arrives
-    const channels = 3; // RGB
+    const inputSize = 128;
+    const channels = 3;
     
-    const data = new Float32Array(inputSize * inputSize * channels);
+    // Output tensor in BCHW format: (Batch, Channels, Height, Width)
+    const data = new Float32Array(1 * channels * inputSize * inputSize);
     
-    // TODO: Implement actual frame resizing and normalization
-    // This would involve:
-    // 1. Resize frame.data from frame.width x frame.height to inputSize x inputSize
-    // 2. Convert RGBA to RGB (drop alpha channel)
-    // 3. Normalize pixel values (typically to [0,1] or [-1,1] depending on model)
+    // Calculate scaling factors
+    const scaleX = frame.width / inputSize;
+    const scaleY = frame.height / inputSize;
+    
+    // Resize and convert RGBA to RGB in BCHW format
+    // Layout: [R channel (all pixels), G channel (all pixels), B channel (all pixels)]
+    for (let y = 0; y < inputSize; y++) {
+      for (let x = 0; x < inputSize; x++) {
+        // Map to original frame coordinates (nearest neighbor)
+        const srcX = Math.min(Math.floor(x * scaleX), frame.width - 1);
+        const srcY = Math.min(Math.floor(y * scaleY), frame.height - 1);
+        const srcIdx = (srcY * frame.width + srcX) * 4; // RGBA = 4 bytes per pixel
+        
+        // Output index in BCHW format
+        const dstIdx = y * inputSize + x;
+        
+        // Extract and normalize RGB values (0-255 -> 0-1)
+        const r = frame.data[srcIdx] / 255.0;
+        const g = frame.data[srcIdx + 1] / 255.0;
+        const b = frame.data[srcIdx + 2] / 255.0;
+        
+        // Store in BCHW format: [all R values, all G values, all B values]
+        data[0 * inputSize * inputSize + dstIdx] = r; // R channel
+        data[1 * inputSize * inputSize + dstIdx] = g; // G channel
+        data[2 * inputSize * inputSize + dstIdx] = b; // B channel
+      }
+    }
     
     return {
       data,
@@ -241,22 +265,168 @@ class YOLOModelManager {
 
   /**
    * Parse YOLO model output into detection objects
-   * NOTE: This is model-specific and will need adjustment for your YOLOv12 model
+   * Output shape: (1, 84, 336) where 84 = [4 bbox coords + 80 class scores]
+   * 336 = number of potential detections from various anchor boxes/scales
    */
   private parseYOLOOutput(outputTensor: any, frameWidth: number, frameHeight: number): Detection[] {
-    // PLACEHOLDER: Real parsing depends on your specific YOLOv12 output format
-    // Typical YOLO output: [batch, num_detections, (x, y, w, h, confidence, class_probs...)]
-    
     const detections: Detection[] = [];
     
-    // TODO: Implement actual YOLO output parsing
-    // This would involve:
-    // 1. Extract bounding boxes, confidence scores, and class probabilities
-    // 2. Apply NMS (Non-Maximum Suppression) to remove duplicate detections
-    // 3. Filter by confidence threshold
-    // 4. Convert to Detection objects
+    try {
+      // Output shape: (1, 84, 336)
+      // - 84 values per detection: [x, y, w, h, class_scores...80]
+      // - 336 potential detections
+      const numDetections = 336;
+      const numClasses = 80;
+      const bboxCoords = 4;
+      
+      // Access the output data (format depends on TFLite binding)
+      const outputData = outputTensor[0] || outputTensor;
+      
+      // DEBUG: Log tensor info on first few calls
+      if (Math.random() < 0.1) { // 10% sampling to avoid spam
+        console.log('[YOLO-DEBUG] Output tensor type:', typeof outputData);
+        console.log('[YOLO-DEBUG] Output tensor length:', outputData?.length);
+        console.log('[YOLO-DEBUG] Sample values [0-5]:', outputData?.slice ? outputData.slice(0, 5) : 'N/A');
+        console.log('[YOLO-DEBUG] Expected total values:', 84 * 336);
+      }
+      
+      // Parse each detection
+      let maxConfidenceFound = 0;
+      let detectionCandidates = 0;
+      
+      for (let i = 0; i < numDetections; i++) {
+        // Extract bbox coordinates (x, y, w, h)
+        const x = outputData[0 * numDetections + i];      // Center X (normalized 0-1)
+        const y = outputData[1 * numDetections + i];      // Center Y (normalized 0-1)
+        const w = outputData[2 * numDetections + i];      // Width (normalized 0-1)
+        const h = outputData[3 * numDetections + i];      // Height (normalized 0-1)
+        
+        // Find class with highest confidence
+        let maxClassScore = -Infinity;
+        let maxClassId = 0;
+        
+        for (let c = 0; c < numClasses; c++) {
+          const classScore = outputData[(bboxCoords + c) * numDetections + i];
+          if (classScore > maxClassScore) {
+            maxClassScore = classScore;
+            maxClassId = c;
+          }
+        }
+        
+        // Try both sigmoid and direct value (model might already output probabilities)
+        const confidenceSigmoid = 1 / (1 + Math.exp(-maxClassScore)); // Sigmoid activation
+        const confidenceDirect = maxClassScore; // Direct value (if already probability)
+        
+        // Use whichever makes more sense (sigmoid if raw logits, direct if already 0-1)
+        const confidence = maxClassScore > 1 || maxClassScore < 0 ? confidenceSigmoid : confidenceDirect;
+        
+        if (confidence > maxConfidenceFound) {
+          maxConfidenceFound = confidence;
+        }
+        
+        // TEMPORARILY use lower threshold for debugging
+        const tempThreshold = 0.1; // Was 0.5
+        
+        if (confidence >= tempThreshold) {
+          detectionCandidates++;
+        }
+        
+        // Filter by confidence threshold
+        if (confidence >= this.confidenceThreshold) {
+          // Convert from center format (x, y, w, h) to corner format (x, y, width, height)
+          const boxX = Math.max(0, Math.min(1, x - w / 2)); // Top-left X
+          const boxY = Math.max(0, Math.min(1, y - h / 2)); // Top-left Y
+          const boxW = Math.max(0, Math.min(1, w));         // Width
+          const boxH = Math.max(0, Math.min(1, h));         // Height
+          
+          detections.push({
+            classId: maxClassId,
+            className: YOLO_CLASS_NAMES[maxClassId] || `class_${maxClassId}`,
+            confidence: confidence,
+            boundingBox: {
+              x: boxX,
+              y: boxY,
+              width: boxW,
+              height: boxH
+            }
+          });
+        }
+      }
+      
+      // Apply Non-Maximum Suppression (NMS) to remove overlapping boxes
+      const nmsDetections = this.applyNMS(detections, 0.45); // IoU threshold = 0.45
+      
+      // DEBUG: Log detection stats
+      if (detections.length === 0) {
+        console.log(`[YOLO-DEBUG] No detections! Max confidence found: ${maxConfidenceFound.toFixed(4)}, Candidates at 0.1 threshold: ${detectionCandidates}`);
+      }
+      
+      return nmsDetections;
+    } catch (error: any) {
+      console.error('[YOLO-TFLite] Error parsing output:', error?.message || error);
+      return [];
+    }
+  }
+
+  /**
+   * Calculate Intersection over Union (IoU) between two bounding boxes
+   */
+  private calculateIoU(boxA: BoundingBox, boxB: BoundingBox): number {
+    // Calculate intersection area
+    const xA = Math.max(boxA.x, boxB.x);
+    const yA = Math.max(boxA.y, boxB.y);
+    const xB = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
+    const yB = Math.min(boxA.y + boxA.height, boxB.y + boxB.height);
     
-    return detections;
+    const intersectionWidth = Math.max(0, xB - xA);
+    const intersectionHeight = Math.max(0, yB - yA);
+    const intersectionArea = intersectionWidth * intersectionHeight;
+    
+    // Calculate union area
+    const boxAArea = boxA.width * boxA.height;
+    const boxBArea = boxB.width * boxB.height;
+    const unionArea = boxAArea + boxBArea - intersectionArea;
+    
+    // Return IoU
+    return unionArea > 0 ? intersectionArea / unionArea : 0;
+  }
+
+  /**
+   * Apply Non-Maximum Suppression (NMS) to remove overlapping detections
+   */
+  private applyNMS(detections: Detection[], iouThreshold: number): Detection[] {
+    if (detections.length === 0) return [];
+    
+    // Sort detections by confidence (highest first)
+    const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
+    
+    const keep: Detection[] = [];
+    const suppressed = new Set<number>();
+    
+    for (let i = 0; i < sorted.length; i++) {
+      if (suppressed.has(i)) continue;
+      
+      const currentBox = sorted[i];
+      keep.push(currentBox);
+      
+      // Suppress overlapping boxes of the same class
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (suppressed.has(j)) continue;
+        
+        const compareBox = sorted[j];
+        
+        // Only compare boxes of the same class
+        if (currentBox.classId === compareBox.classId) {
+          const iou = this.calculateIoU(currentBox.boundingBox, compareBox.boundingBox);
+          
+          if (iou > iouThreshold) {
+            suppressed.add(j);
+          }
+        }
+      }
+    }
+    
+    return keep;
   }
 
   /**
