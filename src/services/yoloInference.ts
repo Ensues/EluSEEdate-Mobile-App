@@ -264,6 +264,14 @@ class YOLOModelManager {
   }
 
   /**
+   * Dequantize int8 value to float
+   * For quantized TFLite models: float = (int8 - zero_point) * scale
+   */
+  private dequantize(value: number, scale: number = 0.003921568859368563, zeroPoint: number = -128): number {
+    return (value - zeroPoint) * scale;
+  }
+
+  /**
    * Parse YOLO model output into detection objects
    * Output shape: (1, 84, 336) where 84 = [4 bbox coords + 80 class scores]
    * 336 = number of potential detections from various anchor boxes/scales
@@ -282,12 +290,80 @@ class YOLOModelManager {
       // Access the output data (format depends on TFLite binding)
       const outputData = outputTensor[0] || outputTensor;
       
+      // Detect tensor layout: (1, 84, 336) vs (1, 336, 84)
+      const totalValues = outputData?.length || 0;
+      const expectedValues = 84 * 336; // 28224
+      
+      // Try to infer the layout based on typical YOLO patterns
+      // If length matches, we need to determine if it's [84, 336] or [336, 84]
+      let isTransposed = true; // Assume [84, 336] by default
+      
+      // Check if the data looks more like [336, 84] format
+      // In [336, 84] format, each detection would be 84 consecutive values
+      // We can check by looking at value ranges - bbox coords should be similar across channels
+      if (totalValues >= 84 * 2) {
+        const val0 = outputData[0];
+        const val84 = outputData[84];
+        const val1 = outputData[1];
+        const val336 = outputData[336];
+        
+        // If values at stride=84 are more similar than values at stride=336,
+        // it's likely [336, 84] format
+        if (Math.abs(val0 - val84) < Math.abs(val0 - val336)) {
+          isTransposed = false;
+          console.log('[YOLO-DEBUG] Detected non-transposed tensor format [336, 84]');
+        } else {
+          console.log('[YOLO-DEBUG] Using transposed tensor format [84, 336]');
+        }
+      }
+      
       // DEBUG: Log tensor info on first few calls
       if (Math.random() < 0.1) { // 10% sampling to avoid spam
         console.log('[YOLO-DEBUG] Output tensor type:', typeof outputData);
-        console.log('[YOLO-DEBUG] Output tensor length:', outputData?.length);
-        console.log('[YOLO-DEBUG] Sample values [0-5]:', outputData?.slice ? outputData.slice(0, 5) : 'N/A');
-        console.log('[YOLO-DEBUG] Expected total values:', 84 * 336);
+        console.log('[YOLO-DEBUG] Output tensor length:', totalValues, '(expected:', expectedValues, ')');
+        console.log('[YOLO-DEBUG] Sample values [0-5]:', JSON.stringify({
+          "0": outputData[0],
+          "1": outputData[1],
+          "2": outputData[2],
+          "3": outputData[3],
+          "4": outputData[4]
+        }));
+      }
+      
+      // Detect if model output is quantized (int8 values)
+      const isQuantized = outputData[0] !== undefined && 
+                         (outputData[0] < 0 || (outputData[0] > 1 && Number.isInteger(outputData[0])));
+      
+      if (isQuantized) {
+        console.log('[YOLO-DEBUG] Detected quantized model output (int8), applying dequantization');
+      }
+      
+      // Sample and log a few detections for debugging
+      if (Math.random() < 0.05) {
+        console.log('[YOLO-DEBUG] Sample detection data:');
+        for (let i = 0; i < Math.min(3, numDetections); i++) {
+          let x, y, w, h, firstClassScore;
+          
+          if (isTransposed) {
+            x = outputData[0 * numDetections + i];
+            y = outputData[1 * numDetections + i];
+            w = outputData[2 * numDetections + i];
+            h = outputData[3 * numDetections + i];
+            firstClassScore = outputData[4 * numDetections + i];
+          } else {
+            x = outputData[i * 84 + 0];
+            y = outputData[i * 84 + 1];
+            w = outputData[i * 84 + 2];
+            h = outputData[i * 84 + 3];
+            firstClassScore = outputData[i * 84 + 4];
+          }
+          
+          if (isQuantized) {
+            console.log(`  Detection ${i}: x=${this.dequantize(x).toFixed(3)}, y=${this.dequantize(y).toFixed(3)}, w=${this.dequantize(w).toFixed(3)}, h=${this.dequantize(h).toFixed(3)}, first_class=${this.dequantize(firstClassScore).toFixed(3)}`);
+          } else {
+            console.log(`  Detection ${i}: x=${x.toFixed(3)}, y=${y.toFixed(3)}, w=${w.toFixed(3)}, h=${h.toFixed(3)}, first_class=${firstClassScore.toFixed(3)}`);
+          }
+        }
       }
       
       // Parse each detection
@@ -296,42 +372,69 @@ class YOLOModelManager {
       
       for (let i = 0; i < numDetections; i++) {
         // Extract bbox coordinates (x, y, w, h)
-        const x = outputData[0 * numDetections + i];      // Center X (normalized 0-1)
-        const y = outputData[1 * numDetections + i];      // Center Y (normalized 0-1)
-        const w = outputData[2 * numDetections + i];      // Width (normalized 0-1)
-        const h = outputData[3 * numDetections + i];      // Height (normalized 0-1)
+        // Handle both transposed [84, 336] and non-transposed [336, 84] layouts
+        let x, y, w, h;
+        
+        if (isTransposed) {
+          // Transposed format: [84, 336] - each channel is contiguous
+          x = outputData[0 * numDetections + i];      // Center X
+          y = outputData[1 * numDetections + i];      // Center Y
+          w = outputData[2 * numDetections + i];      // Width
+          h = outputData[3 * numDetections + i];      // Height
+        } else {
+          // Non-transposed format: [336, 84] - each detection is contiguous
+          x = outputData[i * 84 + 0];
+          y = outputData[i * 84 + 1];
+          w = outputData[i * 84 + 2];
+          h = outputData[i * 84 + 3];
+        }
+        
+        // Dequantize if model is quantized
+        if (isQuantized) {
+          x = this.dequantize(x);
+          y = this.dequantize(y);
+          w = this.dequantize(w);
+          h = this.dequantize(h);
+        }
         
         // Find class with highest confidence
         let maxClassScore = -Infinity;
         let maxClassId = 0;
         
         for (let c = 0; c < numClasses; c++) {
-          const classScore = outputData[(bboxCoords + c) * numDetections + i];
+          let classScore;
+          
+          if (isTransposed) {
+            // Transposed format: [84, 336]
+            classScore = outputData[(bboxCoords + c) * numDetections + i];
+          } else {
+            // Non-transposed format: [336, 84]
+            classScore = outputData[i * 84 + bboxCoords + c];
+          }
+          
+          // Dequantize if model is quantized
+          if (isQuantized) {
+            classScore = this.dequantize(classScore);
+          }
+          
           if (classScore > maxClassScore) {
             maxClassScore = classScore;
             maxClassId = c;
           }
         }
         
-        // Try both sigmoid and direct value (model might already output probabilities)
-        const confidenceSigmoid = 1 / (1 + Math.exp(-maxClassScore)); // Sigmoid activation
-        const confidenceDirect = maxClassScore; // Direct value (if already probability)
-        
-        // Use whichever makes more sense (sigmoid if raw logits, direct if already 0-1)
-        const confidence = maxClassScore > 1 || maxClassScore < 0 ? confidenceSigmoid : confidenceDirect;
+        // Apply sigmoid activation to get probability (YOLO typically outputs logits)
+        const confidence = 1 / (1 + Math.exp(-maxClassScore));
         
         if (confidence > maxConfidenceFound) {
           maxConfidenceFound = confidence;
         }
         
-        // TEMPORARILY use lower threshold for debugging
-        const tempThreshold = 0.1; // Was 0.5
-        
-        if (confidence >= tempThreshold) {
+        if (confidence >= 0.25) { // Count candidates at lower threshold for debugging
           detectionCandidates++;
         }
         
-        // Filter by confidence threshold
+        // Filter by confidence threshold (use actual threshold, not temp one)
         if (confidence >= this.confidenceThreshold) {
           // Convert from center format (x, y, w, h) to corner format (x, y, width, height)
           const boxX = Math.max(0, Math.min(1, x - w / 2)); // Top-left X
@@ -339,17 +442,24 @@ class YOLOModelManager {
           const boxW = Math.max(0, Math.min(1, w));         // Width
           const boxH = Math.max(0, Math.min(1, h));         // Height
           
-          detections.push({
-            classId: maxClassId,
-            className: YOLO_CLASS_NAMES[maxClassId] || `class_${maxClassId}`,
-            confidence: confidence,
-            boundingBox: {
-              x: boxX,
-              y: boxY,
-              width: boxW,
-              height: boxH
-            }
-          });
+          // Filter out invalid or tiny boxes (likely false positives)
+          const MIN_BOX_SIZE = 0.01; // Minimum 1% of image size
+          if (boxW > MIN_BOX_SIZE && boxH > MIN_BOX_SIZE && 
+              boxX >= 0 && boxY >= 0 && 
+              (boxX + boxW) <= 1 && (boxY + boxH) <= 1) {
+            
+            detections.push({
+              classId: maxClassId,
+              className: YOLO_CLASS_NAMES[maxClassId] || `class_${maxClassId}`,
+              confidence: confidence,
+              boundingBox: {
+                x: boxX,
+                y: boxY,
+                width: boxW,
+                height: boxH
+              }
+            });
+          }
         }
       }
       
@@ -357,8 +467,17 @@ class YOLOModelManager {
       const nmsDetections = this.applyNMS(detections, 0.45); // IoU threshold = 0.45
       
       // DEBUG: Log detection stats
-      if (detections.length === 0) {
-        console.log(`[YOLO-DEBUG] No detections! Max confidence found: ${maxConfidenceFound.toFixed(4)}, Candidates at 0.1 threshold: ${detectionCandidates}`);
+      console.log(`[YOLO-DEBUG] Pre-NMS detections: ${detections.length}, Post-NMS: ${nmsDetections.length}, Max confidence: ${maxConfidenceFound.toFixed(4)}, Candidates@0.25: ${detectionCandidates}`);
+      
+      // DEBUG: Check for suspicious identical confidence scores
+      if (nmsDetections.length > 5) {
+        const confidences = nmsDetections.map(d => d.confidence.toFixed(2));
+        const uniqueConfidences = new Set(confidences);
+        if (uniqueConfidences.size < nmsDetections.length / 2) {
+          console.log('[YOLO-WARNING] Many detections have identical confidence scores!');
+          console.log('[YOLO-WARNING] This suggests the model output may not be parsed correctly');
+          console.log('[YOLO-WARNING] Unique confidences:', Array.from(uniqueConfidences).join(', '));
+        }
       }
       
       return nmsDetections;

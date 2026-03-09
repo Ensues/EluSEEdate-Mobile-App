@@ -7,6 +7,7 @@
 export type RootStackParamList = {
   MainMenu: undefined;
   Camera: undefined;
+  Logs: undefined;
 };
 
 // Extend the navigation types

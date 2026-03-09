@@ -116,6 +116,11 @@ export const YOLO_CONFIG = {
     numDetections: 336,           // Maximum number of detections
     confidenceThreshold: 0.5,     // Minimum confidence for detection
     iouThreshold: 0.45,           // IoU threshold for NMS
+    
+    // Quantization parameters (for int8 quantized models)
+    isQuantized: true,            // Model uses int8 quantization
+    quantizationScale: 0.003921568859368563,  // Dequantization scale (1/255)
+    quantizationZeroPoint: -128,  // Dequantization zero point
   },
 
   // Preprocessing Parameters
