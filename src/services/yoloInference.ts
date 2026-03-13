@@ -264,14 +264,6 @@ class YOLOModelManager {
   }
 
   /**
-   * Dequantize int8 value to float
-   * For quantized TFLite models: float = (int8 - zero_point) * scale
-   */
-  private dequantize(value: number, scale: number = 0.003921568859368563, zeroPoint: number = -128): number {
-    return (value - zeroPoint) * scale;
-  }
-
-  /**
    * Parse YOLO model output into detection objects
    * Output shape: (1, 84, 336) where 84 = [4 bbox coords + 80 class scores]
    * 336 = number of potential detections from various anchor boxes/scales
@@ -330,29 +322,6 @@ class YOLOModelManager {
         }));
       }
       
-      // Detect if model output is quantized (int8 values in range -128 to 127)
-      // Check first few values to determine if they're in int8 range
-      let isQuantized = false;
-      if (outputData[0] !== undefined) {
-        // Sample first 20 values
-        let allInInt8Range = true;
-        let hasNegative = false;
-        for (let i = 0; i < Math.min(20, totalValues); i++) {
-          const val = outputData[i];
-          if (val < -128 || val > 127) {
-            allInInt8Range = false;
-            break;
-          }
-          if (val < 0) hasNegative = true;
-        }
-        // Likely int8 quantized if all values in range and some are negative
-        isQuantized = allInInt8Range && hasNegative;
-      }
-      
-      if (isQuantized) {
-        console.log('[YOLO-DEBUG] Detected quantized model output (int8), applying dequantization');
-      }
-      
       // Sample and log a few detections for debugging
       if (Math.random() < 0.05) {
         console.log('[YOLO-DEBUG] Sample detection data:');
@@ -373,11 +342,7 @@ class YOLOModelManager {
             firstClassScore = outputData[i * 84 + 4];
           }
           
-          if (isQuantized) {
-            console.log(`  Detection ${i}: x=${this.dequantize(x).toFixed(3)}, y=${this.dequantize(y).toFixed(3)}, w=${this.dequantize(w).toFixed(3)}, h=${this.dequantize(h).toFixed(3)}, first_class=${this.dequantize(firstClassScore).toFixed(3)}`);
-          } else {
-            console.log(`  Detection ${i}: x=${x.toFixed(3)}, y=${y.toFixed(3)}, w=${w.toFixed(3)}, h=${h.toFixed(3)}, first_class=${firstClassScore.toFixed(3)}`);
-          }
+          console.log(`  Detection ${i}: x=${x.toFixed(3)}, y=${y.toFixed(3)}, w=${w.toFixed(3)}, h=${h.toFixed(3)}, first_class=${firstClassScore.toFixed(3)}`);
         }
       }
       
@@ -404,14 +369,6 @@ class YOLOModelManager {
           h = outputData[i * 84 + 3];
         }
         
-        // Dequantize if model is quantized
-        if (isQuantized) {
-          x = this.dequantize(x);
-          y = this.dequantize(y);
-          w = this.dequantize(w);
-          h = this.dequantize(h);
-        }
-        
         // Find class with highest confidence
         let maxClassScore = -Infinity;
         let maxClassId = 0;
@@ -427,11 +384,6 @@ class YOLOModelManager {
             classScore = outputData[i * 84 + bboxCoords + c];
           }
           
-          // Dequantize if model is quantized
-          if (isQuantized) {
-            classScore = this.dequantize(classScore);
-          }
-          
           if (classScore > maxClassScore) {
             maxClassScore = classScore;
             maxClassId = c;
@@ -439,7 +391,7 @@ class YOLOModelManager {
         }
         
         // Model outputs probabilities directly (no sigmoid needed)
-        // Float16 quantization typically preserves probability outputs
+        // Float16 model outputs are already floating values.
         const confidence = Math.max(0, Math.min(1, maxClassScore));
         
         if (confidence > maxConfidenceFound) {
