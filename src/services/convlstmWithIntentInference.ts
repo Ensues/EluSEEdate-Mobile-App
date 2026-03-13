@@ -107,7 +107,7 @@ class TFLiteModelManager {
       this.isLoaded = true;
       this.demoMode = false;
       console.log('[ConvLSTM-Intent-TFLite] ✅ Model loaded successfully with GPU acceleration!');
-      console.log('[ConvLSTM-Intent-TFLite] Model: Float16 quantized for optimal mobile performance');
+      console.log('[ConvLSTM-Intent-TFLite] Model: Float16 quantized with Global Average Pooling');
       console.log('[ConvLSTM-Intent-TFLite] Model ready for real-time inference');
       
       // Warm up with dummy inference

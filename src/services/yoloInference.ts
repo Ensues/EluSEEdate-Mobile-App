@@ -330,9 +330,24 @@ class YOLOModelManager {
         }));
       }
       
-      // Detect if model output is quantized (int8 values)
-      const isQuantized = outputData[0] !== undefined && 
-                         (outputData[0] < 0 || (outputData[0] > 1 && Number.isInteger(outputData[0])));
+      // Detect if model output is quantized (int8 values in range -128 to 127)
+      // Check first few values to determine if they're in int8 range
+      let isQuantized = false;
+      if (outputData[0] !== undefined) {
+        // Sample first 20 values
+        let allInInt8Range = true;
+        let hasNegative = false;
+        for (let i = 0; i < Math.min(20, totalValues); i++) {
+          const val = outputData[i];
+          if (val < -128 || val > 127) {
+            allInInt8Range = false;
+            break;
+          }
+          if (val < 0) hasNegative = true;
+        }
+        // Likely int8 quantized if all values in range and some are negative
+        isQuantized = allInInt8Range && hasNegative;
+      }
       
       if (isQuantized) {
         console.log('[YOLO-DEBUG] Detected quantized model output (int8), applying dequantization');
@@ -423,8 +438,9 @@ class YOLOModelManager {
           }
         }
         
-        // Apply sigmoid activation to get probability (YOLO typically outputs logits)
-        const confidence = 1 / (1 + Math.exp(-maxClassScore));
+        // Model outputs probabilities directly (no sigmoid needed)
+        // Float16 quantization typically preserves probability outputs
+        const confidence = Math.max(0, Math.min(1, maxClassScore));
         
         if (confidence > maxConfidenceFound) {
           maxConfidenceFound = confidence;
